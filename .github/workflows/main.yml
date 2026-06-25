@@ -1,0 +1,51 @@
+name: Build Linux Larp ISO
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y live-build dpkg-dev xorriso isolinux syslinux-common qemu-system-x86
+
+      - name: Fix Maintainer Script Permissions
+        run: |
+          # Finds all maintainer scripts and ensures they are executable (755)
+          # This prevents the 'bad permissions' error from dpkg-deb
+          find packages -type f \( -name "postinst" -o -name "preinst" -o -name "postrm" -o -name "prerm" \) -exec chmod 755 {} \;
+
+      - name: Build Packages
+        run: |
+          mkdir -p repo
+          dpkg-deb --root-owner-group --build packages/hackermode repo/hackermode_1.0_all.deb
+          dpkg-deb --root-owner-group --build packages/wallpapers repo/wallpapers_1.0_all.deb
+          dpkg-deb --root-owner-group --build packages/fetch repo/fetch_1.0_all.deb
+          dpkg-deb --root-owner-group --build packages/defaults repo/defaults_1.0_all.deb
+
+      - name: Prepare ISO Directory
+        run: |
+          mkdir -p iso/config/includes.chroot/opt/larp-packages
+          cp repo/*.deb iso/config/includes.chroot/opt/larp-packages/
+
+      - name: Build ISO
+        working-directory: ./iso
+        run: |
+          sudo lb clean --purge
+          sudo lb config
+          sudo lb build
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-larp-iso
+          # Adjust this path if the live-build output filename varies
+          path: iso/live-image-amd64.hybrid.iso
